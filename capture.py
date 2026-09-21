@@ -5,30 +5,6 @@ Connects to an MJPEG stream (e.g. an ESP32-CAM), watches for the on-screen
 slide to change, waits for the camera to settle on the new slide, then
 hands that frame off to test_ai.py's pipeline: OCR -> Gemini -> study notes.
 
-Design note on "detecting a slide change":
-Comparing OCR text between frames (the old approach) is noisy — OCR output
-jitters slightly frame to frame even when nothing on screen has changed,
-which causes false triggers, and running full OCR on every single frame is
-expensive. Instead this script compares downscaled grayscale pixel
-differences between frames, which is cheap and reliable for detecting real
-visual change vs. camera noise. OCR (and the Gemini call) only run once,
-after a change is detected AND the image has stopped moving/settled —
-never on every frame.
-
-Design note on threading:
-Frame-reading and the state machine above run on the main thread and are
-cheap. OCR + the Gemini call (commit_slide) are comparatively slow — a few
-seconds per slide — and used to run inline in the main loop, which meant
-the stream wasn't being read at all while a slide was being processed.
-Now a single background worker thread does that slow work instead: the
-main thread just drops a candidate frame onto a small queue and keeps
-reading the stream immediately. Only one worker thread ever calls
-commit_slide, so PaddleOCR, the Gemini client, and all the file writes it
-does are never touched from more than one thread at a time — no locking
-needed. If the worker is still busy with a previous slide when a new one
-settles, the new candidate is dropped rather than queued up indefinitely,
-so the system stays honest about not being able to process infinitely
-fast rather than building an ever-growing backlog.
 """
 
 import queue
